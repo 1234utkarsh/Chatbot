@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSA Chatbot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: '#6366f1',
+            brandDark: '#4f46e5',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Smooth scroll for chat */
+    #chat-box { scroll-behavior: smooth; }
+
+    /* Typing indicator animation */
+    .dot { animation: blink 1.4s infinite both; }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0; }
+      40% { opacity: 1; }
+    }
+
+    /* Fade-in for new messages */
+    .msg-enter {
+      animation: fadeIn 0.25s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Markdown-like code block styling */
+    .bot-text pre {
+      background: #1e1e2e;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 6px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: #cdd6f4;
+    }
+    .bot-text code {
+      background: #2a2a3e;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.85em;
+      color: #89b4fa;
+    }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col items-center justify-center p-4">
+
+  <div class="w-full max-w-2xl flex flex-col h-[90vh]">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-xl">🧠</div>
+        <div>
+          <h1 class="text-lg font-bold text-white leading-tight">DSA Chatbot</h1>
+          <p class="text-xs text-gray-400">Powered by Gemini + Pinecone</p>
+        </div>
+      </div>
+      <button
+        id="clear-btn"
+        onclick="clearHistory()"
+        class="text-xs text-gray-400 hover:text-red-400 border border-gray-700 hover:border-red-500 px-3 py-1.5 rounded-lg transition-colors"
+        title="Clear conversation"
+      >
+        Clear chat
+      </button>
+    </div>
+
+    <!-- Chat messages area -->
+    <div
+      id="chat-box"
+      class="flex-1 overflow-y-auto space-y-4 pr-1 pb-2"
+    >
+      <!-- Welcome message -->
+      <div id="welcome" class="flex justify-start msg-enter">
+        <div class="flex items-start gap-2 max-w-[85%]">
+          <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-sm flex-shrink-0 mt-1">🤖</div>
+          <div class="bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-200 leading-relaxed">
+            Hello! I'm your DSA expert. Ask me anything about <strong>Data Structures &amp; Algorithms</strong> from the document.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="mt-4 flex gap-2 items-end">
+      <textarea
+        id="user-input"
+        rows="1"
+        placeholder="Ask about arrays, trees, sorting..."
+        class="flex-1 bg-gray-800 border border-gray-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-gray-100 placeholder-gray-500 resize-none outline-none transition-colors leading-relaxed"
+        style="max-height: 120px;"
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button
+        id="send-btn"
+        onclick="sendMessage()"
+        class="bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all text-white rounded-xl p-3 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="Send"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </button>
+    </div>
+    <p class="text-center text-xs text-gray-600 mt-2">Press <kbd class="bg-gray-800 px-1 rounded">Enter</kbd> to send · <kbd class="bg-gray-800 px-1 rounded">Shift+Enter</kbd> for new line</p>
+
+  </div>
+
+  <script>
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    function scrollBottom() {
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function appendMessage(role, text) {
+      const isUser = role === 'user';
+      const wrapper = document.createElement('div');
+      wrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'} msg-enter`;
+
+      if (isUser) {
+        wrapper.innerHTML = `
+          <div class="max-w-[80%] bg-indigo-600 rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-white leading-relaxed whitespace-pre-wrap">${escapeHtml(text)}</div>
+        `;
+      } else {
+        wrapper.innerHTML = `
+          <div class="flex items-start gap-2 max-w-[85%]">
+            <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-sm flex-shrink-0 mt-1">🤖</div>
+            <div class="bot-text bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-200 leading-relaxed">${formatBotText(text)}</div>
+          </div>
+        `;
+      }
+
+      chatBox.appendChild(wrapper);
+      scrollBottom();
+      return wrapper;
+    }
+
+    function showTyping() {
+      const wrapper = document.createElement('div');
+      wrapper.id = 'typing-indicator';
+      wrapper.className = 'flex justify-start msg-enter';
+      wrapper.innerHTML = `
+        <div class="flex items-start gap-2">
+          <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-sm flex-shrink-0 mt-1">🤖</div>
+          <div class="bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-3 flex gap-1 items-center h-10">
+            <span class="dot w-2 h-2 bg-indigo-400 rounded-full"></span>
+            <span class="dot w-2 h-2 bg-indigo-400 rounded-full"></span>
+            <span class="dot w-2 h-2 bg-indigo-400 rounded-full"></span>
+          </div>
+        </div>
+      `;
+      chatBox.appendChild(wrapper);
+      scrollBottom();
+    }
+
+    function removeTyping() {
+      const el = document.getElementById('typing-indicator');
+      if (el) el.remove();
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function formatBotText(text) {
+      // Basic markdown: code blocks, inline code, bold
+      let escaped = escapeHtml(text);
+      // Code blocks
+      escaped = escaped.replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+      // Inline code
+      escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+      // Bold
+      escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      // Line breaks
+      escaped = escaped.replace(/\n/g, '<br>');
+      return escaped;
+    }
+
+    async function sendMessage() {
+      const question = userInput.value.trim();
+      if (!question) return;
+
+      sendBtn.disabled = true;
+      userInput.disabled = true;
+      userInput.value = '';
+      userInput.style.height = 'auto';
+
+      appendMessage('user', question);
+      showTyping();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question }),
+        });
+
+        const data = await res.json();
+        removeTyping();
+
+        if (res.ok) {
+          appendMessage('bot', data.answer);
+        } else {
+          appendMessage('bot', data.error || 'Something went wrong.');
+        }
+      } catch (err) {
+        removeTyping();
+        appendMessage('bot', '⚠️ Could not reach the server. Make sure `node server.js` is running.');
+      } finally {
+        sendBtn.disabled = false;
+        userInput.disabled = false;
+        userInput.focus();
+      }
+    }
+
+    async function clearHistory() {
+      try {
+        await fetch('/api/clear', { method: 'POST' });
+      } catch (_) {}
+
+      // Clear UI (keep welcome msg)
+      while (chatBox.children.length > 1) {
+        chatBox.removeChild(chatBox.lastChild);
+      }
+    }
+  </script>
+</body>
+</html>
